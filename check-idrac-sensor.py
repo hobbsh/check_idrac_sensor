@@ -31,13 +31,16 @@ def build_parser():
     parser.add_argument(
         '-s', '--sensortype', required=False, type=str, dest='sensor', default='all')
     parser.add_argument(
-        '-d', '--debug', required=False, type=bool, dest='debug', default=False)
+        '-d', '--debug', required=False, action='store_true', dest='debug', default=False)
+    parser.add_argument(
+        '-v', '--verbose', required=False, action='store_true', dest='verbose', default=False)
 
     return parser
 
 
 def main():
     global debug
+    global verbose
 
     if not racadm_exists():
         print "ERROR: 'racadm' not found. If it's installed, try a symlink to /sbin:\nln -s /opt/dell/srvadmin/sbin/racadm /sbin/racadm\n"
@@ -47,6 +50,7 @@ def main():
     args = parser.parse_args()
 
     debug = args.debug
+    verbose = args.verbose
     rcode = 0
 
     if validate_arguments(args):
@@ -193,10 +197,12 @@ def nagios_output(sensor_data, sensor, perfdata):
             for k, v in desc.iteritems():
                 if v['status'] and v['status'] is not 'N\A':
                     status = v['status'].upper()
-                    #output += "%s - %s;" % (k, status)
-                    if status not in ok_status_list:
-                        output += "WARNING: %s - %s;" % (k, status)
-                        rcode = 1
+                    if verbose:
+                        output += "%s - %s;" % (k, status)
+                    else:
+                        if status not in ok_status_list:
+                            output += "WARNING: %s - %s;" % (k, status)
+                            rcode = 1
         if output == '':
             output = 'OK'
 
@@ -204,12 +210,14 @@ def nagios_output(sensor_data, sensor, perfdata):
         status = sensor_data[sensor]['status'].upper()
 
         # Nagios STDOUT format
-        #output = "%s - %s;" % (sensor, status)
-        if status not in ok_status_list:
-            output += "WARNING: %s - %s;" % (k, status)
-            rcode = 1
+        if verbose:
+            output = "%s - %s;" % (sensor, status)
         else:
-            output = 'OK'
+            if status not in ok_status_list:
+                output += "WARNING: %s - %s;" % (k, status)
+                rcode = 1
+            else:
+                output = 'OK'
 
         if perfdata:
             output += "| %s" % (status)
