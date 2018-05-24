@@ -31,13 +31,16 @@ def build_parser():
     parser.add_argument(
         '-s', '--sensortype', required=False, type=str, dest='sensor', default='all')
     parser.add_argument(
-        '-d', '--debug', required=False, type=bool, dest='debug', default=False)
+        '-d', '--debug', required=False, action='store_true', dest='debug', default=False)
+    parser.add_argument(
+        '-v', '--verbose', required=False, action='store_true', dest='verbose', default=False)
 
     return parser
 
 
 def main():
     global debug
+    global verbose
 
     if not racadm_exists():
         print "ERROR: 'racadm' not found. If it's installed, try a symlink to /sbin:\nln -s /opt/dell/srvadmin/sbin/racadm /sbin/racadm\n"
@@ -47,6 +50,8 @@ def main():
     args = parser.parse_args()
 
     debug = args.debug
+    verbose = args.verbose
+    rcode = 0
 
     if validate_arguments(args):
         host = args.host
@@ -68,12 +73,18 @@ def main():
             if debug:
                 print json.dumps(parsed, sort_keys=True, indent=4)
 
-            print nagios_output(parsed, sensor, perfdata)
+            output = nagios_output(parsed, sensor, perfdata)
+
+            print output[0]
+            rcode = output[1]
         else:
             print "No response from iDRAC!"
+            sys.exit(3)
     else:
         print "ERROR: Invalid command or sensortype. Please check that command or sensortype is valid. Exiting...\n"
         sys.exit(3)
+
+    return rcode
 
 
 def clean_lines(data):
@@ -178,22 +189,40 @@ def sections_to_dict(sensor_data):
 def nagios_output(sensor_data, sensor, perfdata):
     '''provide Nagios output for check results'''
     output = ''
+    rcode = 0
+    ok_status_list = ['OK', 'PRESENT', 'FULLREDUNDANT', 'POWERON', 'N/A']
+
     if sensor == 'all':
         for s, desc in sensor_data.iteritems():
             for k, v in desc.iteritems():
                 if v['status'] and v['status'] is not 'N\A':
                     status = v['status'].upper()
-                    output += "%s - %s;" % (k, status)
+                    if verbose:
+                        output += "%s - %s;" % (k, status)
+                    else:
+                        if status not in ok_status_list:
+                            output += "WARNING: %s - %s;" % (k, status)
+                            rcode = 1
+        if output == '':
+            output = 'OK'
+
     else:
         status = sensor_data[sensor]['status'].upper()
 
         # Nagios STDOUT format
-        output = "%s - %s;" % (sensor, status)
+        if verbose:
+            output = "%s - %s;" % (sensor, status)
+        else:
+            if status not in ok_status_list:
+                output += "WARNING: %s - %s;" % (k, status)
+                rcode = 1
+            else:
+                output = 'OK'
 
         if perfdata:
             output += "| %s" % (status)
 
-    return output
+    return (output, rcode)
 
 
 def compile_sensordata(sensor_data, sensor):
@@ -262,5 +291,5 @@ def exec_command(command):
 
 
 if __name__ == "__main__":
-    main()
-    sys.exit(0)
+    main_rcode = main()
+    sys.exit(main_rcode)
